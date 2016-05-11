@@ -255,7 +255,7 @@ function Get-ewsPath
 	)
 	[string]$autoCheck = "autodiscover." + $domain
 	$owaBase = resolve-dnsname -Server 8.8.8.8 -Name $autoCheck
-	$ewsPath = "https://" + $owaBase.NameHost + "/EWS/Exchange.asmx"
+	$ewsPath = "https://" + $owaBase.Name + "/EWS/Exchange.asmx"
 	
 	#write-host "[*] EWS Path: " + $ewsPath
 	return $ewsPath
@@ -271,7 +271,7 @@ function Get-owaPath
 	)
 	[string]$autoCheck = "autodiscover." + $domain
 	$owaBase = resolve-dnsname -Server 8.8.8.8 -Name $autoCheck
-	$owaPath = "https://" + $owaBase.NameHost + "/owa"
+	$owaPath = "https://" + $owaBase.Name + "/owa"
 
 	#write-host "[*] OWA Path: " + $owaPath
 	return $owaPath
